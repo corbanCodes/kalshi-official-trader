@@ -161,27 +161,35 @@ class PyKalshiTrader:
         """Get orderbook with analytics"""
         try:
             market = self.client.get_market(ticker)
-            ob = market.get_orderbook(depth=20)
+            ob_response = market.get_orderbook(depth=20)
 
-            # Convert to our format
-            yes_levels = [[lvl[0], lvl[1]] for lvl in ob.yes] if ob.yes else []
-            no_levels = [[lvl[0], lvl[1]] for lvl in ob.no] if ob.no else []
+            # OrderbookResponse has .orderbook with .yes and .no as list[tuple[int, int]]
+            # Also has convenience properties like best_yes_bid, best_no_bid, spread, mid
+            raw_yes = ob_response.orderbook.yes if ob_response.orderbook and ob_response.orderbook.yes else []
+            raw_no = ob_response.orderbook.no if ob_response.orderbook and ob_response.orderbook.no else []
+
+            # Convert tuples to lists for JSON serialization
+            yes_levels = [[price, qty] for price, qty in raw_yes]
+            no_levels = [[price, qty] for price, qty in raw_no]
 
             # Save for history export
             save_orderbook_snapshot(ticker, yes_levels, no_levels)
 
+            # Use OrderbookResponse convenience properties
             return {
                 "yes": yes_levels,
                 "no": no_levels,
-                "spread": ob.spread,
-                "mid": ob.mid,
-                "yes_bid": yes_levels[0][0] if yes_levels else 0,
-                "no_bid": no_levels[0][0] if no_levels else 0,
-                "yes_ask": 100 - no_levels[0][0] if no_levels else 0,
-                "no_ask": 100 - yes_levels[0][0] if yes_levels else 0,
+                "spread": ob_response.spread,
+                "mid": ob_response.mid,
+                "yes_bid": ob_response.best_yes_bid or 0,
+                "no_bid": ob_response.best_no_bid or 0,
+                "yes_ask": ob_response.best_yes_ask or 0,
+                "no_ask": 100 - (ob_response.best_yes_bid or 0) if ob_response.best_yes_bid else 0,
             }
         except Exception as e:
             logger.error(f"Error getting orderbook: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"yes": [], "no": []}
 
     def get_mins_left(self) -> Optional[float]:
