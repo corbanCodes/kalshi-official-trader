@@ -326,6 +326,7 @@ class PyKalshiTrader:
 
     def update_dashboard_state(self, ob: dict):
         """Save state for dashboard display"""
+        mins_left = self.get_mins_left()
         state = {
             "bankroll": self.bankroll,
             "wins": self.wins,
@@ -333,6 +334,13 @@ class PyKalshiTrader:
             "current_market": self.current_market,
             "connected": True,
             "last_update": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "mins_left": round(mins_left, 1) if mins_left else None,
+            "spread": ob.get("spread"),
+            "mid": ob.get("mid"),
+            "yes_bid": ob.get("yes_bid"),
+            "no_bid": ob.get("no_bid"),
+            "yes_ask": ob.get("yes_ask"),
+            "no_ask": ob.get("no_ask"),
             "orderbook": {
                 "yes": ob.get("yes", []),
                 "no": ob.get("no", []),

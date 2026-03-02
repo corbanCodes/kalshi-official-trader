@@ -423,34 +423,41 @@ DASHBOARD_HTML = """
             </span>
         </h1>
 
-        <div id="refresh-indicator">Auto-refresh: 5s</div>
+        <div id="refresh-indicator">
+            <span style="display: inline-block; width: 8px; height: 8px; background: #22c55e; border-radius: 50%; margin-right: 6px; animation: pulse 1s infinite;"></span>
+            LIVE - updating every 500ms
+        </div>
+        <style>
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+        </style>
 
         <!-- Status & Controls -->
         <div class="grid">
-            <div class="card {{ 'highlight' if settings.trading_enabled else '' }}">
+            <div class="card" id="status-card">
                 <h2>Trading Status</h2>
                 <div class="stat">
                     <span class="stat-label">Status</span>
-                    <span class="stat-value">{{ 'TRADING' if settings.trading_enabled else 'STOPPED' }}</span>
+                    <span class="stat-value" id="status-value">{{ 'TRADING' if settings.trading_enabled else 'STOPPED' }}</span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">Current Market</span>
-                    <span class="stat-value">{{ state.current_market or 'None' }}</span>
+                    <span class="stat-value" id="market-value">{{ state.current_market or 'None' }}</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-label">WebSocket</span>
-                    <span class="stat-value">{{ 'Connected' if state.connected else 'Disconnected' }}</span>
+                    <span class="stat-label">Connection</span>
+                    <span class="stat-value" id="connection-value">{{ 'Connected' if state.connected else 'Disconnected' }}</span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">Last Update</span>
-                    <span class="stat-value">{{ state.last_update or 'Never' }}</span>
+                    <span class="stat-value" id="last-update-value">{{ state.last_update or 'Never' }}</span>
                 </div>
                 <div class="actions">
-                    {% if settings.trading_enabled %}
-                    <button class="danger" onclick="toggleTrading(false)">STOP TRADING</button>
-                    {% else %}
-                    <button onclick="toggleTrading(true)">START TRADING</button>
-                    {% endif %}
+                    <button id="trading-btn" class="{{ 'danger' if settings.trading_enabled else '' }}" onclick="toggleTrading({{ 'false' if settings.trading_enabled else 'true' }})">
+                        {{ 'STOP TRADING' if settings.trading_enabled else 'START TRADING' }}
+                    </button>
                 </div>
             </div>
 
@@ -458,27 +465,27 @@ DASHBOARD_HTML = """
                 <h2>Performance</h2>
                 <div class="stat">
                     <span class="stat-label">Bankroll</span>
-                    <span class="stat-value">${{ "%.2f"|format(state.bankroll) }}</span>
+                    <span class="stat-value" id="bankroll-value">${{ "%.2f"|format(state.bankroll) }}</span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">P&L</span>
-                    <span class="stat-value {{ 'positive' if (state.bankroll - settings.starting_bankroll) >= 0 else 'negative' }}">
+                    <span class="stat-value {{ 'positive' if (state.bankroll - settings.starting_bankroll) >= 0 else 'negative' }}" id="pnl-value">
                         ${{ "%.2f"|format(state.bankroll - settings.starting_bankroll) }}
                     </span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">ROI</span>
-                    <span class="stat-value {{ 'positive' if (state.bankroll - settings.starting_bankroll) >= 0 else 'negative' }}">
+                    <span class="stat-value {{ 'positive' if (state.bankroll - settings.starting_bankroll) >= 0 else 'negative' }}" id="roi-value">
                         {{ "%.2f"|format(((state.bankroll - settings.starting_bankroll) / settings.starting_bankroll) * 100) }}%
                     </span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">Win/Loss</span>
-                    <span class="stat-value">{{ state.wins }}/{{ state.losses }}</span>
+                    <span class="stat-value" id="winloss-value">{{ state.wins }}/{{ state.losses }}</span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">Win Rate</span>
-                    <span class="stat-value">
+                    <span class="stat-value" id="winrate-value">
                         {% if (state.wins + state.losses) > 0 %}
                         {{ "%.1f"|format((state.wins / (state.wins + state.losses)) * 100) }}%
                         {% else %}
@@ -562,30 +569,23 @@ DASHBOARD_HTML = """
 
         <!-- Live Orderbook -->
         <div class="card" style="margin-top: 20px;">
-            <h2>Live Orderbook</h2>
+            <h2>Live Orderbook <span id="ob-update-time" style="font-size: 12px; color: #6b7280; font-weight: normal;"></span></h2>
             <div class="orderbook">
                 <div class="orderbook-side yes-side">
                     <h3>YES Bids</h3>
-                    {% for level in orderbook.yes[:10] %}
-                    <div class="orderbook-level">
-                        <span>{{ level[0] }}¢</span>
-                        <span>{{ "{:,}".format(level[1]) }}</span>
+                    <div id="yes-orderbook">
+                        <div style="color: #666;">Loading...</div>
                     </div>
-                    {% else %}
-                    <div style="color: #666;">No data</div>
-                    {% endfor %}
                 </div>
                 <div class="orderbook-side no-side">
                     <h3>NO Bids</h3>
-                    {% for level in orderbook.no[:10] %}
-                    <div class="orderbook-level">
-                        <span>{{ level[0] }}¢</span>
-                        <span>{{ "{:,}".format(level[1]) }}</span>
+                    <div id="no-orderbook">
+                        <div style="color: #666;">Loading...</div>
                     </div>
-                    {% else %}
-                    <div style="color: #666;">No data</div>
-                    {% endfor %}
                 </div>
+            </div>
+            <div style="margin-top: 12px; font-size: 12px; color: #6b7280;">
+                <span id="ob-stats">Spread: - | Mid: -</span>
             </div>
         </div>
 
@@ -681,7 +681,10 @@ DASHBOARD_HTML = """
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({enabled: enabled})
-            }).then(() => location.reload());
+            }).then(() => {
+                // Update UI immediately without reload
+                updateAllData();
+            });
         }
 
         document.getElementById('settings-form').addEventListener('submit', function(e) {
@@ -706,11 +709,24 @@ DASHBOARD_HTML = """
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(settings)
-            }).then(() => location.reload());
+            }).then(() => {
+                // Show success feedback
+                const btn = document.querySelector('#settings-form button[type="submit"]');
+                const originalText = btn.textContent;
+                btn.textContent = 'Saved!';
+                btn.style.background = '#22c55e';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '';
+                }, 2000);
+            });
         });
 
         function resetSettings() {
-            fetch('/api/settings/reset', {method: 'POST'}).then(() => location.reload());
+            fetch('/api/settings/reset', {method: 'POST'}).then(() => {
+                // Reload to show default values in form
+                location.reload();
+            });
         }
 
         function exportTrades() {
@@ -721,8 +737,121 @@ DASHBOARD_HTML = """
             window.location.href = '/export/orderbook';
         }
 
-        // Auto-refresh every 5 seconds
-        setTimeout(() => location.reload(), 5000);
+        // Live orderbook updates via AJAX
+        let lastUpdate = Date.now();
+
+        function renderOrderbook(levels, elementId) {
+            const container = document.getElementById(elementId);
+            if (!levels || levels.length === 0) {
+                container.innerHTML = '<div style="color: #666;">No data</div>';
+                return;
+            }
+
+            let html = '';
+            for (let i = 0; i < Math.min(levels.length, 15); i++) {
+                const [price, qty] = levels[i];
+                html += `<div class="orderbook-level">
+                    <span>${price}¢</span>
+                    <span>${qty.toLocaleString()}</span>
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function updateOrderbook() {
+            fetch('/api/orderbook')
+                .then(res => res.json())
+                .then(data => {
+                    renderOrderbook(data.yes, 'yes-orderbook');
+                    renderOrderbook(data.no, 'no-orderbook');
+
+                    // Update stats
+                    const spread = data.spread !== null ? data.spread : '-';
+                    const mid = data.mid !== null ? data.mid : '-';
+                    const minsLeft = data.mins_left !== null ? data.mins_left.toFixed(1) : '-';
+                    document.getElementById('ob-stats').innerHTML =
+                        `<strong>Market:</strong> ${data.current_market || '-'} | ` +
+                        `<strong>Time Left:</strong> ${minsLeft} min | ` +
+                        `<strong>Spread:</strong> ${spread}¢ | ` +
+                        `<strong>YES Ask:</strong> ${data.yes_ask || '-'}¢ | ` +
+                        `<strong>NO Ask:</strong> ${data.no_ask || '-'}¢`;
+
+                    // Update timestamp
+                    const now = new Date();
+                    document.getElementById('ob-update-time').textContent =
+                        `(${now.toLocaleTimeString()})`;
+
+                    lastUpdate = Date.now();
+                })
+                .catch(err => {
+                    console.error('Orderbook update error:', err);
+                });
+        }
+
+        // Update all live data via AJAX
+        function updateAllData() {
+            fetch('/api/live')
+                .then(res => res.json())
+                .then(data => {
+                    // Update orderbook
+                    renderOrderbook(data.orderbook.yes, 'yes-orderbook');
+                    renderOrderbook(data.orderbook.no, 'no-orderbook');
+
+                    // Update orderbook stats
+                    const spread = data.spread !== null ? data.spread : '-';
+                    const minsLeft = data.mins_left !== null ? data.mins_left.toFixed(1) : '-';
+                    document.getElementById('ob-stats').innerHTML =
+                        `<strong>Market:</strong> ${data.current_market || '-'} | ` +
+                        `<strong>Time Left:</strong> ${minsLeft} min | ` +
+                        `<strong>Spread:</strong> ${spread}¢ | ` +
+                        `<strong>YES Ask:</strong> ${data.yes_ask || '-'}¢ | ` +
+                        `<strong>NO Ask:</strong> ${data.no_ask || '-'}¢`;
+
+                    // Update timestamp
+                    const now = new Date();
+                    document.getElementById('ob-update-time').textContent = `(${now.toLocaleTimeString()})`;
+
+                    // Update Trading Status section
+                    document.getElementById('status-value').textContent = data.trading_enabled ? 'TRADING' : 'STOPPED';
+                    document.getElementById('market-value').textContent = data.current_market || 'None';
+                    document.getElementById('connection-value').textContent = data.connected ? 'Connected' : 'Disconnected';
+                    document.getElementById('last-update-value').textContent = data.last_update || 'Never';
+
+                    // Update Performance section
+                    const bankroll = data.bankroll || 0;
+                    const startingBankroll = data.starting_bankroll || 10000;
+                    const pnl = bankroll - startingBankroll;
+                    const roi = startingBankroll > 0 ? (pnl / startingBankroll) * 100 : 0;
+
+                    document.getElementById('bankroll-value').textContent = '$' + bankroll.toFixed(2);
+                    document.getElementById('pnl-value').textContent = '$' + pnl.toFixed(2);
+                    document.getElementById('pnl-value').className = 'stat-value ' + (pnl >= 0 ? 'positive' : 'negative');
+                    document.getElementById('roi-value').textContent = roi.toFixed(2) + '%';
+                    document.getElementById('roi-value').className = 'stat-value ' + (roi >= 0 ? 'positive' : 'negative');
+                    document.getElementById('winloss-value').textContent = data.wins + '/' + data.losses;
+
+                    const totalTrades = data.wins + data.losses;
+                    const winRate = totalTrades > 0 ? ((data.wins / totalTrades) * 100).toFixed(1) + '%' : '-';
+                    document.getElementById('winrate-value').textContent = winRate;
+
+                    // Update trading button
+                    const tradingBtn = document.getElementById('trading-btn');
+                    if (data.trading_enabled) {
+                        tradingBtn.className = 'danger';
+                        tradingBtn.textContent = 'STOP TRADING';
+                        tradingBtn.onclick = () => toggleTrading(false);
+                    } else {
+                        tradingBtn.className = '';
+                        tradingBtn.textContent = 'START TRADING';
+                        tradingBtn.onclick = () => toggleTrading(true);
+                    }
+                })
+                .catch(err => console.error('Update error:', err));
+        }
+
+        // Update every 500ms - NO page reloads
+        updateAllData();
+        setInterval(updateAllData, 500);
     </script>
 </body>
 </html>
@@ -872,6 +1001,59 @@ def toggle_trading():
 @app.route("/api/state")
 def api_state():
     return jsonify(load_state())
+
+
+@app.route("/api/orderbook")
+def api_orderbook():
+    """Fast endpoint for live orderbook polling"""
+    state = load_state()
+    orderbook = state.get("orderbook", {"yes": [], "no": []})
+
+    return jsonify({
+        "yes": orderbook.get("yes", []),
+        "no": orderbook.get("no", []),
+        "spread": state.get("spread"),
+        "mid": state.get("mid"),
+        "yes_bid": state.get("yes_bid"),
+        "no_bid": state.get("no_bid"),
+        "yes_ask": state.get("yes_ask"),
+        "no_ask": state.get("no_ask"),
+        "mins_left": state.get("mins_left"),
+        "current_market": state.get("current_market"),
+        "last_update": state.get("last_update"),
+    })
+
+
+@app.route("/api/live")
+def api_live():
+    """Comprehensive endpoint for all live data - no page reloads needed"""
+    state = load_state()
+    settings = load_settings()
+    orderbook = state.get("orderbook", {"yes": [], "no": []})
+
+    return jsonify({
+        # Orderbook data
+        "orderbook": orderbook,
+        "spread": state.get("spread"),
+        "mid": state.get("mid"),
+        "yes_bid": state.get("yes_bid"),
+        "no_bid": state.get("no_bid"),
+        "yes_ask": state.get("yes_ask"),
+        "no_ask": state.get("no_ask"),
+        "mins_left": state.get("mins_left"),
+
+        # Trading status
+        "current_market": state.get("current_market"),
+        "connected": state.get("connected", False),
+        "last_update": state.get("last_update"),
+        "trading_enabled": settings.get("trading_enabled", False),
+
+        # Performance
+        "bankroll": state.get("bankroll", 0),
+        "starting_bankroll": settings.get("starting_bankroll", 10000),
+        "wins": state.get("wins", 0),
+        "losses": state.get("losses", 0),
+    })
 
 
 @app.route("/export/trades")
