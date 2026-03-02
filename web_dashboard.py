@@ -131,148 +131,285 @@ DASHBOARD_HTML = """
 <head>
     <title>Kalshi Official Trader</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: 'Monaco', 'Menlo', monospace;
-            background: #0a0a0a;
-            color: #00ff00;
-            padding: 20px;
-            line-height: 1.4;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 24px;
+            line-height: 1.5;
         }
         .container { max-width: 1400px; margin: 0 auto; }
-        h1 { color: #00ff00; margin-bottom: 20px; font-size: 24px; }
-        h2 { color: #00cc00; margin: 20px 0 10px; font-size: 18px; border-bottom: 1px solid #333; padding-bottom: 5px; }
 
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        .card {
-            background: #111;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 15px;
+        h1 {
+            color: #fff;
+            margin-bottom: 24px;
+            font-size: 28px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
-        .card.highlight { border-color: #00ff00; }
-        .card.warning { border-color: #ff6600; }
-        .card.danger { border-color: #ff0000; }
+        .env-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+            letter-spacing: 0.5px;
+        }
+        .env-badge.production {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
 
-        .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #222; }
+        h2 {
+            color: #fff;
+            margin: 0 0 16px;
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+
+        .card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        .card.highlight {
+            border-color: rgba(34, 197, 94, 0.4);
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.1);
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
         .stat:last-child { border-bottom: none; }
-        .stat-label { color: #888; }
-        .stat-value { color: #00ff00; font-weight: bold; }
-        .stat-value.positive { color: #00ff00; }
-        .stat-value.negative { color: #ff4444; }
+        .stat-label { color: #9ca3af; font-size: 14px; }
+        .stat-value {
+            color: #fff;
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .stat-value.positive { color: #22c55e; }
+        .stat-value.negative { color: #ef4444; }
 
         button {
-            background: #00aa00;
-            color: #000;
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: #fff;
             border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
+            padding: 12px 24px;
+            border-radius: 10px;
             cursor: pointer;
             font-family: inherit;
-            font-weight: bold;
-            margin: 5px;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
         }
-        button:hover { background: #00cc00; }
-        button.danger { background: #aa0000; color: #fff; }
-        button.danger:hover { background: #cc0000; }
-        button.secondary { background: #333; color: #fff; }
-        button.secondary:hover { background: #444; }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
+        }
+        button.danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        button.danger:hover {
+            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+        }
+        button.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
+        }
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: none;
+        }
 
         input, select {
-            background: #1a1a1a;
-            border: 1px solid #444;
-            color: #00ff00;
-            padding: 8px 12px;
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 10px;
             font-family: inherit;
+            font-size: 14px;
             width: 100%;
-            margin: 5px 0;
+            margin: 6px 0;
+            transition: all 0.2s;
         }
-        input:focus, select:focus { outline: none; border-color: #00ff00; }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+        input:disabled, select:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background: rgba(255, 255, 255, 0.02);
+        }
+        select {
+            cursor: pointer;
+        }
+        select option {
+            background: #1a1a2e;
+            color: #fff;
+        }
 
-        label { display: block; color: #888; margin-top: 10px; font-size: 12px; }
+        label {
+            display: block;
+            color: #9ca3af;
+            margin-top: 16px;
+            margin-bottom: 4px;
+            font-size: 13px;
+            font-weight: 500;
+        }
 
         .toggle {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px 0;
+            gap: 12px;
+            padding: 12px 0;
+        }
+        .toggle span {
+            font-size: 14px;
+            font-weight: 500;
         }
         .toggle input[type="checkbox"] {
-            width: 50px;
+            width: 48px;
             height: 26px;
             appearance: none;
-            background: #333;
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 13px;
             cursor: pointer;
             position: relative;
+            transition: background 0.2s;
+            margin: 0;
+            padding: 0;
         }
-        .toggle input[type="checkbox"]:checked { background: #00aa00; }
+        .toggle input[type="checkbox"]:checked { background: #22c55e; }
         .toggle input[type="checkbox"]::before {
             content: '';
             position: absolute;
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
             background: #fff;
             border-radius: 50%;
-            top: 2px;
-            left: 2px;
+            top: 3px;
+            left: 3px;
             transition: 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
-        .toggle input[type="checkbox"]:checked::before { left: 26px; }
+        .toggle input[type="checkbox"]:checked::before { left: 25px; }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 12px;
+            font-size: 13px;
         }
         th, td {
-            padding: 8px;
+            padding: 12px 8px;
             text-align: left;
-            border-bottom: 1px solid #222;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
-        th { color: #888; font-weight: normal; }
-        tr:hover { background: #1a1a1a; }
+        th {
+            color: #6b7280;
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        tr:hover { background: rgba(255, 255, 255, 0.03); }
 
         .status-dot {
             display: inline-block;
-            width: 10px;
-            height: 10px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
-            margin-right: 8px;
         }
-        .status-dot.online { background: #00ff00; }
-        .status-dot.offline { background: #ff0000; }
+        .status-dot.online {
+            background: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+        }
+        .status-dot.offline {
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+        }
 
         .orderbook {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: 20px;
         }
-        .orderbook-side { font-size: 11px; }
-        .orderbook-side h3 { font-size: 14px; margin-bottom: 10px; }
+        .orderbook-side { font-size: 13px; }
+        .orderbook-side h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
         .orderbook-level {
             display: flex;
             justify-content: space-between;
-            padding: 3px 0;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
         }
-        .yes-side { color: #00ff00; }
-        .no-side { color: #ff6666; }
+        .yes-side h3 { color: #22c55e; }
+        .no-side h3 { color: #ef4444; }
+        .yes-side .orderbook-level { color: #86efac; }
+        .no-side .orderbook-level { color: #fca5a5; }
 
-        .actions { margin: 20px 0; }
+        .actions { margin-top: 20px; }
 
         #refresh-indicator {
             position: fixed;
-            top: 10px;
-            right: 10px;
-            color: #666;
-            font-size: 11px;
+            top: 20px;
+            right: 24px;
+            color: #6b7280;
+            font-size: 12px;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 12px;
+            border-radius: 20px;
         }
 
-        .slippage { color: #ff9900; }
-        .slippage.good { color: #00ff00; }
-        .slippage.bad { color: #ff4444; }
+        .slippage { color: #f59e0b; }
+        .slippage.good { color: #22c55e; }
+        .slippage.bad { color: #ef4444; }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+        @media (max-width: 900px) {
+            .settings-grid { grid-template-columns: 1fr; }
+        }
+
+        .bet-input-group {
+            transition: opacity 0.2s;
+        }
+        .bet-input-group.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -280,8 +417,8 @@ DASHBOARD_HTML = """
         <h1>
             <span class="status-dot {{ 'online' if state.connected else 'offline' }}"></span>
             Kalshi Official Trader
-            <span style="font-size: 12px; color: #666;">
-                {{ 'DEMO' if settings.use_demo else 'PRODUCTION' }}
+            <span class="env-badge {{ 'production' if not settings.use_demo else '' }}">
+                {{ 'DEMO' if settings.use_demo else 'LIVE' }}
             </span>
         </h1>
 
@@ -355,10 +492,10 @@ DASHBOARD_HTML = """
         <div class="card" style="margin-top: 20px;">
             <h2>Strategy Settings</h2>
             <form id="settings-form">
-                <div class="grid">
+                <div class="settings-grid">
                     <div>
                         <div class="toggle">
-                            <input type="checkbox" name="use_demo" {{ 'checked' if settings.use_demo else '' }}>
+                            <input type="checkbox" name="use_demo" id="use_demo" {{ 'checked' if settings.use_demo else '' }}>
                             <span>Use Demo Environment</span>
                         </div>
 
@@ -374,28 +511,32 @@ DASHBOARD_HTML = """
 
                     <div>
                         <div class="toggle">
-                            <input type="checkbox" name="use_martingale" {{ 'checked' if settings.use_martingale else '' }}>
+                            <input type="checkbox" name="use_martingale" id="use_martingale" {{ 'checked' if settings.use_martingale else '' }}>
                             <span>Use Martingale</span>
                         </div>
 
                         <label>Martingale Cap (max doublings)</label>
-                        <input type="number" name="martingale_cap" value="{{ settings.martingale_cap }}" min="1" max="10">
+                        <input type="number" name="martingale_cap" id="martingale_cap" value="{{ settings.martingale_cap }}" min="1" max="10" {{ 'disabled' if not settings.use_martingale else '' }}>
 
                         <label>Bet Mode</label>
-                        <select name="bet_mode">
+                        <select name="bet_mode" id="bet_mode">
                             <option value="percent" {{ 'selected' if settings.bet_mode == 'percent' else '' }}>Percent of Bankroll</option>
                             <option value="flat" {{ 'selected' if settings.bet_mode == 'flat' else '' }}>Flat Bet Size</option>
                         </select>
 
-                        <label>Bet Percent (%)</label>
-                        <input type="number" name="bet_percent" value="{{ settings.bet_percent }}" min="1" max="50" step="0.5">
+                        <div id="bet-percent-group" class="bet-input-group {{ 'disabled' if settings.bet_mode == 'flat' else '' }}">
+                            <label>Bet Percent (%)</label>
+                            <input type="number" name="bet_percent" id="bet_percent" value="{{ settings.bet_percent }}" min="1" max="50" step="0.5" {{ 'disabled' if settings.bet_mode == 'flat' else '' }}>
+                        </div>
 
-                        <label>Flat Bet Size ($)</label>
-                        <input type="number" name="flat_bet_size" value="{{ settings.flat_bet_size }}" min="1" max="10000">
+                        <div id="flat-bet-group" class="bet-input-group {{ 'disabled' if settings.bet_mode == 'percent' else '' }}">
+                            <label>Flat Bet Size ($)</label>
+                            <input type="number" name="flat_bet_size" id="flat_bet_size" value="{{ settings.flat_bet_size }}" min="1" max="10000" {{ 'disabled' if settings.bet_mode == 'percent' else '' }}>
+                        </div>
                     </div>
 
                     <div>
-                        <label>Order Type</label>
+                        <label style="margin-top: 0;">Order Type</label>
                         <select name="order_type">
                             <option value="limit" {{ 'selected' if settings.order_type == 'limit' else '' }}>Limit Order</option>
                             <option value="market" {{ 'selected' if settings.order_type == 'market' else '' }}>Market Order</option>
@@ -406,7 +547,7 @@ DASHBOARD_HTML = """
                     </div>
                 </div>
 
-                <div style="margin-top: 15px;">
+                <div class="button-group">
                     <button type="submit">Save Settings</button>
                     <button type="button" class="secondary" onclick="resetSettings()">Reset to Defaults</button>
                 </div>
@@ -497,6 +638,38 @@ DASHBOARD_HTML = """
     </div>
 
     <script>
+        // Bet mode toggle logic
+        function updateBetModeInputs() {
+            const betMode = document.getElementById('bet_mode').value;
+            const percentGroup = document.getElementById('bet-percent-group');
+            const flatGroup = document.getElementById('flat-bet-group');
+            const percentInput = document.getElementById('bet_percent');
+            const flatInput = document.getElementById('flat_bet_size');
+
+            if (betMode === 'percent') {
+                percentGroup.classList.remove('disabled');
+                flatGroup.classList.add('disabled');
+                percentInput.disabled = false;
+                flatInput.disabled = true;
+            } else {
+                percentGroup.classList.add('disabled');
+                flatGroup.classList.remove('disabled');
+                percentInput.disabled = true;
+                flatInput.disabled = false;
+            }
+        }
+
+        // Martingale toggle logic
+        function updateMartingaleInputs() {
+            const useMartingale = document.getElementById('use_martingale').checked;
+            const martingaleCap = document.getElementById('martingale_cap');
+            martingaleCap.disabled = !useMartingale;
+        }
+
+        // Initialize on page load
+        document.getElementById('bet_mode').addEventListener('change', updateBetModeInputs);
+        document.getElementById('use_martingale').addEventListener('change', updateMartingaleInputs);
+
         function toggleTrading(enabled) {
             fetch('/api/trading', {
                 method: 'POST',
@@ -509,19 +682,19 @@ DASHBOARD_HTML = """
             e.preventDefault();
             const formData = new FormData(this);
             const settings = {};
-            formData.forEach((value, key) => {
-                if (key === 'use_demo' || key === 'use_martingale') {
-                    settings[key] = true;
-                } else if (['min_wait_minutes', 'odds_threshold', 'max_entry_price',
-                            'martingale_cap', 'bet_percent', 'flat_bet_size', 'starting_bankroll'].includes(key)) {
-                    settings[key] = parseFloat(value);
-                } else {
-                    settings[key] = value;
-                }
-            });
-            // Handle unchecked checkboxes
-            if (!formData.has('use_demo')) settings.use_demo = false;
-            if (!formData.has('use_martingale')) settings.use_martingale = false;
+
+            // Get all values including disabled inputs
+            settings.use_demo = document.getElementById('use_demo').checked;
+            settings.use_martingale = document.getElementById('use_martingale').checked;
+            settings.min_wait_minutes = parseFloat(document.querySelector('[name="min_wait_minutes"]').value);
+            settings.odds_threshold = parseFloat(document.querySelector('[name="odds_threshold"]').value);
+            settings.max_entry_price = parseFloat(document.querySelector('[name="max_entry_price"]').value);
+            settings.martingale_cap = parseFloat(document.getElementById('martingale_cap').value);
+            settings.bet_mode = document.getElementById('bet_mode').value;
+            settings.bet_percent = parseFloat(document.getElementById('bet_percent').value);
+            settings.flat_bet_size = parseFloat(document.getElementById('flat_bet_size').value);
+            settings.order_type = document.querySelector('[name="order_type"]').value;
+            settings.starting_bankroll = parseFloat(document.querySelector('[name="starting_bankroll"]').value);
 
             fetch('/api/settings', {
                 method: 'POST',

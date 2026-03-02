@@ -32,6 +32,66 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Settings file shared with dashboard
+SETTINGS_FILE = "trader_settings.json"
+TRADE_HISTORY_FILE = "trade_history.json"
+ORDERBOOK_HISTORY_FILE = "orderbook_history.json"
+
+DEFAULT_SETTINGS = {
+    "trading_enabled": False,
+    "use_demo": True,
+    "min_wait_minutes": 10,
+    "odds_threshold": 85,
+    "max_entry_price": 95,
+    "use_martingale": True,
+    "martingale_cap": 4,
+    "bet_mode": "percent",
+    "bet_percent": 10,
+    "flat_bet_size": 100,
+    "order_type": "limit",
+    "starting_bankroll": 10000,
+}
+
+
+def load_settings() -> dict:
+    """Load settings from file (shared with dashboard)"""
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE) as f:
+                saved = json.load(f)
+                return {**DEFAULT_SETTINGS, **saved}
+        except:
+            pass
+    return DEFAULT_SETTINGS.copy()
+
+
+def save_trade_history(trades: list):
+    """Save trade history for dashboard"""
+    with open(TRADE_HISTORY_FILE, "w") as f:
+        json.dump(trades[-500:], f, indent=2)  # Keep last 500
+
+
+def save_orderbook_snapshot(ticker: str, yes_levels: list, no_levels: list):
+    """Save orderbook snapshot for history export"""
+    history = []
+    if os.path.exists(ORDERBOOK_HISTORY_FILE):
+        try:
+            with open(ORDERBOOK_HISTORY_FILE) as f:
+                history = json.load(f)
+        except:
+            pass
+
+    history.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "ticker": ticker,
+        "yes": yes_levels[:20],
+        "no": no_levels[:20],
+    })
+
+    # Keep last 1000 snapshots
+    with open(ORDERBOOK_HISTORY_FILE, "w") as f:
+        json.dump(history[-1000:], f)
+
 
 class OfficialTrader:
     """
@@ -39,15 +99,15 @@ class OfficialTrader:
 
     Connects via authenticated WebSocket for full orderbook,
     places orders via REST API.
+
+    Reads settings from dashboard file so changes take effect live.
     """
 
     def __init__(
         self,
         api_key_id: str,
         private_key_pem: str,
-        use_demo: bool = True,
     ):
-        self.use_demo = use_demo
         self.api_key_id = api_key_id
         self.private_key_pem = private_key_pem
 
@@ -55,18 +115,10 @@ class OfficialTrader:
         self.rest: Optional[KalshiRestClient] = None
         self.ws: Optional[KalshiWebSocket] = None
 
-        # Strategy config
-        self.strategy = STRATEGY
-        self.min_wait_minutes = self.strategy["min_wait_minutes"]
-        self.odds_threshold = self.strategy["odds_threshold"]
-        self.max_entry_price = self.strategy["max_entry_price"]
-        self.use_martingale = self.strategy["use_martingale"]
-        self.martingale_cap = self.strategy["martingale_cap"]
-        self.bet_pct = self.strategy["bet_pct_of_bankroll"]
+        # Load settings from dashboard file
+        self._reload_settings()
 
         # State
-        self.bankroll = self.strategy["starting_bankroll"]
-        self.initial_bankroll = self.bankroll
         self.current_market: Optional[str] = None
         self.pending_order: Optional[Dict] = None
         self.trades: List[Dict] = []
@@ -74,18 +126,38 @@ class OfficialTrader:
         self.losses = 0
         self.consecutive_losses = 0
         self.traded_windows = set()
+        self.last_settings_check = datetime.now(timezone.utc)
 
         # Real-time data
         self.current_ticker_data: Dict = {}
         self.orderbook_data: Dict = {}
 
+    def _reload_settings(self):
+        """Load settings from dashboard file"""
+        settings = load_settings()
+        self.use_demo = settings.get("use_demo", True)
+        self.trading_enabled = settings.get("trading_enabled", False)
+        self.min_wait_minutes = settings.get("min_wait_minutes", 10)
+        self.odds_threshold = settings.get("odds_threshold", 85)
+        self.max_entry_price = settings.get("max_entry_price", 95)
+        self.use_martingale = settings.get("use_martingale", True)
+        self.martingale_cap = settings.get("martingale_cap", 4)
+        self.bet_mode = settings.get("bet_mode", "percent")
+        self.bet_percent = settings.get("bet_percent", 10) / 100  # Convert to decimal
+        self.flat_bet_size = settings.get("flat_bet_size", 100)
+        self.order_type = settings.get("order_type", "limit")
+        self.bankroll = settings.get("starting_bankroll", 10000)
+        self.initial_bankroll = self.bankroll
+
     async def start(self):
         """Initialize clients and connect"""
+        self._reload_settings()
         logger.info(f"Starting Official Trader (demo={self.use_demo})")
-        logger.info(f"Strategy: {self.strategy['name']}")
+        logger.info(f"Settings:")
         logger.info(f"  - Wait {self.min_wait_minutes} min, threshold {self.odds_threshold}c")
         logger.info(f"  - Martingale: {self.use_martingale}, cap: {self.martingale_cap}")
-        logger.info(f"  - Bet %: {self.bet_pct * 100}%")
+        logger.info(f"  - Bet mode: {self.bet_mode}, percent: {self.bet_percent*100}%, flat: ${self.flat_bet_size}")
+        logger.info(f"  - Trading enabled: {self.trading_enabled}")
 
         # REST client for orders
         self.rest = KalshiRestClient(
@@ -99,8 +171,6 @@ class OfficialTrader:
         try:
             balance = await self.rest.get_balance()
             logger.info(f"Account balance: ${balance.available_balance / 100:.2f}")
-            if not self.use_demo:
-                self.bankroll = balance.available_balance / 100
         except Exception as e:
             logger.warning(f"Could not fetch balance: {e}")
 
@@ -163,6 +233,12 @@ class OfficialTrader:
                 f"{len(yes_levels)} YES levels, {len(no_levels)} NO levels"
             )
 
+            # Save to history for export
+            save_orderbook_snapshot(ticker, yes_levels, no_levels)
+
+            # Update state for dashboard
+            self._save_state_for_dashboard(yes_levels, no_levels)
+
             # Log top 3 levels
             if yes_levels:
                 logger.info("  YES bids (top 3):")
@@ -189,6 +265,16 @@ class OfficialTrader:
 
     async def _check_entry(self, ticker: str, data: Dict):
         """Check if we should enter a trade"""
+        # Reload settings every 5 seconds to pick up dashboard changes
+        now = datetime.now(timezone.utc)
+        if (now - self.last_settings_check).total_seconds() > 5:
+            self._reload_settings()
+            self.last_settings_check = now
+
+        # Skip if trading is disabled
+        if not self.trading_enabled:
+            return
+
         # Skip if we have a pending order
         if self.pending_order:
             return
@@ -255,9 +341,14 @@ class OfficialTrader:
         await self._place_order(ticker, direction, entry_price, contracts, bet_size)
 
     def _calculate_bet_size(self) -> float:
-        """Calculate bet size with martingale"""
-        base_bet = self.bankroll * self.bet_pct
+        """Calculate bet size based on mode (percent or flat) with martingale"""
+        # Base bet depends on mode
+        if self.bet_mode == "percent":
+            base_bet = self.bankroll * self.bet_percent
+        else:
+            base_bet = self.flat_bet_size
 
+        # Apply martingale if enabled and we have losses
         if self.use_martingale and self.consecutive_losses > 0:
             multiplier = min(2 ** self.consecutive_losses, 2 ** self.martingale_cap)
             bet = base_bet * multiplier
@@ -331,13 +422,45 @@ class OfficialTrader:
             logger.error(f"Failed to place order: {e}")
 
     async def _process_fill(self, data: Dict):
-        """Process our fill for P&L"""
+        """Process our fill for P&L and slippage tracking"""
         if not self.pending_order:
             return
 
-        # TODO: Match fill to pending order and calculate P&L
-        # For now, just log it
-        logger.info(f"Processing fill: {data}")
+        # Extract fill details
+        fill_price = data.get("yes_price") or data.get("no_price") or 0
+        fill_count = data.get("count", 0)
+
+        order = self.pending_order
+        entry_price = order.get("price", 0)
+        slippage = fill_price - entry_price
+
+        logger.info(
+            f"FILL: Entry {entry_price}c -> Fill {fill_price}c "
+            f"(slippage: {slippage:+d}c) x{fill_count}"
+        )
+
+        # Record the trade with slippage
+        trade = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ticker": order.get("ticker"),
+            "window_id": self._get_window_id(order.get("ticker", "")),
+            "side": order.get("side"),
+            "entry_price": entry_price,
+            "fill_price": fill_price,
+            "slippage": slippage,
+            "contracts": fill_count,
+            "bet_size": order.get("bet_size"),
+            "outcome": None,  # Will be set when market settles
+            "profit": None,
+            "bankroll_after": None,
+        }
+
+        self.trades.append(trade)
+        save_trade_history(self.trades)
+
+        # Clear pending order
+        self.pending_order = None
+        logger.info(f"Trade recorded, awaiting settlement")
 
     # =========================================================================
     # HELPERS
@@ -371,6 +494,23 @@ class OfficialTrader:
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=2)
         logger.info(f"State saved to {STATE_FILE}")
+
+    def _save_state_for_dashboard(self, yes_levels: list = None, no_levels: list = None):
+        """Save state for dashboard display"""
+        state = {
+            "bankroll": self.bankroll,
+            "wins": self.wins,
+            "losses": self.losses,
+            "current_market": self.current_market,
+            "connected": self.ws.connected if self.ws else False,
+            "last_update": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "orderbook": {
+                "yes": yes_levels or [],
+                "no": no_levels or [],
+            }
+        }
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
 
     def _load_state(self):
         """Load state from file"""
@@ -429,9 +569,8 @@ async def main():
         logger.error("3. Save the private key immediately (shown only once)")
         sys.exit(1)
 
-    use_demo = os.environ.get("USE_PRODUCTION", "").lower() != "true"
-
-    trader = OfficialTrader(api_key, private_key, use_demo=use_demo)
+    # Settings (including demo/production) loaded from dashboard settings file
+    trader = OfficialTrader(api_key, private_key)
 
     try:
         await trader.start()
