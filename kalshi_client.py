@@ -520,6 +520,11 @@ class KalshiWebSocket:
         self.trades: List[Dict] = []
         self.fills: List[Dict] = []
 
+    @property
+    def connected(self) -> bool:
+        """Check if WebSocket is connected"""
+        return self._running and self.ws is not None and not self.ws.closed
+
     async def connect(self):
         """Establish authenticated WebSocket connection"""
         headers = self.auth.get_ws_headers()
@@ -632,6 +637,10 @@ class KalshiWebSocket:
         """Route message to handler"""
         msg_type = data.get("type")
 
+        # Log ALL messages for debugging
+        if msg_type not in ("orderbook_delta", "ticker"):  # Skip noisy ones
+            logger.info(f"[WS MSG] type={msg_type} | {json.dumps(data)[:200]}")
+
         if msg_type == "orderbook_snapshot":
             self._handle_orderbook_snapshot(data)
         elif msg_type == "orderbook_delta":
@@ -647,13 +656,15 @@ class KalshiWebSocket:
         elif msg_type == "order_update":
             self._handle_order_update(data)
         elif msg_type == "subscribed":
-            logger.info(f"Subscription confirmed: {data.get('channel')}")
+            # Log full response to see actual structure
+            logger.info(f"Subscription confirmed: {data}")
         elif msg_type == "error":
             logger.error(f"WebSocket error: {data}")
             if self.on_error:
                 self.on_error(data)
         else:
-            logger.debug(f"Unhandled message type: {msg_type}")
+            # Log unhandled messages to catch any we're missing
+            logger.info(f"[WS] Unhandled type '{msg_type}': {json.dumps(data)[:300]}")
 
     def _handle_orderbook_snapshot(self, data: Dict):
         """

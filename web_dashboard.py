@@ -54,6 +54,7 @@ TRADE_HISTORY_FILE = "trade_history.json"
 DEFAULT_SETTINGS = {
     "trading_enabled": False,
     "use_demo": True,
+    "use_production_prices": True,  # Use real prices even in paper trading mode
     "min_wait_minutes": 10,
     "odds_threshold": 85,
     "max_entry_price": 95,
@@ -496,7 +497,12 @@ DASHBOARD_HTML = """
                     <div>
                         <div class="toggle">
                             <input type="checkbox" name="use_demo" id="use_demo" {{ 'checked' if settings.use_demo else '' }}>
-                            <span>Use Demo Environment</span>
+                            <span>Paper Trading (no real orders)</span>
+                        </div>
+
+                        <div class="toggle">
+                            <input type="checkbox" name="use_production_prices" id="use_production_prices" {{ 'checked' if settings.use_production_prices else '' }}>
+                            <span>Use Real Prices (production orderbook)</span>
                         </div>
 
                         <label>Min Wait (minutes into window)</label>

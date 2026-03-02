@@ -40,6 +40,7 @@ ORDERBOOK_HISTORY_FILE = "orderbook_history.json"
 DEFAULT_SETTINGS = {
     "trading_enabled": False,
     "use_demo": True,
+    "use_production_prices": True,  # Use real orderbook even in paper trading
     "min_wait_minutes": 10,
     "odds_threshold": 85,
     "max_entry_price": 95,
@@ -120,6 +121,7 @@ class OfficialTrader:
 
         # State
         self.current_market: Optional[str] = None
+        self.current_close_time: str = ""
         self.pending_order: Optional[Dict] = None
         self.trades: List[Dict] = []
         self.wins = 0
@@ -136,6 +138,7 @@ class OfficialTrader:
         """Load settings from dashboard file"""
         settings = load_settings()
         self.use_demo = settings.get("use_demo", True)
+        self.use_production_prices = settings.get("use_production_prices", True)
         self.trading_enabled = settings.get("trading_enabled", False)
         self.min_wait_minutes = settings.get("min_wait_minutes", 10)
         self.odds_threshold = settings.get("odds_threshold", 85)
@@ -152,33 +155,51 @@ class OfficialTrader:
     async def start(self):
         """Initialize clients and connect"""
         self._reload_settings()
-        logger.info(f"Starting Official Trader (demo={self.use_demo})")
+
+        # Determine which API to use for prices
+        # use_production_prices=True means get REAL orderbook from production
+        # use_demo=True means DON'T place real orders (paper trade)
+        price_source = "PRODUCTION" if self.use_production_prices else "DEMO"
+        order_target = "DEMO (paper)" if self.use_demo else "PRODUCTION (real $$$)"
+
+        logger.info(f"Starting Official Trader")
+        logger.info(f"  Price source: {price_source}")
+        logger.info(f"  Order target: {order_target}")
         logger.info(f"Settings:")
         logger.info(f"  - Wait {self.min_wait_minutes} min, threshold {self.odds_threshold}c")
         logger.info(f"  - Martingale: {self.use_martingale}, cap: {self.martingale_cap}")
         logger.info(f"  - Bet mode: {self.bet_mode}, percent: {self.bet_percent*100}%, flat: ${self.flat_bet_size}")
         logger.info(f"  - Trading enabled: {self.trading_enabled}")
 
-        # REST client for orders
+        # REST client for PRICES (use production if use_production_prices=True)
         self.rest = KalshiRestClient(
             self.api_key_id,
             self.private_key_pem,
-            use_demo=self.use_demo,
+            use_demo=not self.use_production_prices,  # False = production
         )
         await self.rest.start()
+        logger.info(f"REST client for prices: {'PRODUCTION' if self.use_production_prices else 'DEMO'}")
 
-        # Check balance
-        try:
-            balance = await self.rest.get_balance()
-            logger.info(f"Account balance: ${balance.available_balance / 100:.2f}")
-        except Exception as e:
-            logger.warning(f"Could not fetch balance: {e}")
+        # Check balance (from demo account if paper trading)
+        if self.use_demo:
+            try:
+                demo_rest = KalshiRestClient(
+                    self.api_key_id,
+                    self.private_key_pem,
+                    use_demo=True,
+                )
+                await demo_rest.start()
+                balance = await demo_rest.get_balance()
+                await demo_rest.close()
+                logger.info(f"Demo account balance: ${balance.available_balance / 100:.2f}")
+            except Exception as e:
+                logger.warning(f"Could not fetch demo balance: {e}")
 
-        # WebSocket client for real-time data
+        # WebSocket client for real-time data (same source as REST)
         self.ws = KalshiWebSocket(
             self.api_key_id,
             self.private_key_pem,
-            use_demo=self.use_demo,
+            use_demo=not self.use_production_prices,
         )
 
         # Set up handlers
@@ -473,12 +494,18 @@ class OfficialTrader:
         return parts[-1] if len(parts) > 1 else ticker
 
     def _get_mins_left(self, ticker: str) -> Optional[float]:
-        """Get minutes remaining from ticker data"""
-        # This should come from market close_time vs current time
-        # For now, estimate from ticker data if available
-        data = self.current_ticker_data.get(ticker, {})
-        # TODO: Parse close_time and calculate
-        return None  # Will implement with actual market data
+        """Get minutes remaining until market close"""
+        if not self.current_close_time:
+            return None
+
+        try:
+            close_time = datetime.fromisoformat(self.current_close_time.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            diff = (close_time - now).total_seconds()
+            return diff / 60  # Convert to minutes
+        except Exception as e:
+            logger.warning(f"Could not calculate mins left: {e}")
+            return None
 
     def _save_state(self):
         """Save state to file"""
@@ -533,7 +560,7 @@ class OfficialTrader:
     # =========================================================================
 
     async def run(self):
-        """Main trading loop"""
+        """Main trading loop with REST polling fallback"""
         self._load_state()
 
         # Find current market
@@ -543,15 +570,112 @@ class OfficialTrader:
             return
 
         self.current_market = markets[0]["ticker"]
+        self.current_close_time = markets[0].get("close_time", "")
         logger.info(f"Current market: {self.current_market}")
-        logger.info(f"Close time: {markets[0].get('close_time', '?')}")
+        logger.info(f"Close time: {self.current_close_time}")
 
-        # Subscribe to everything
+        # Subscribe to WebSocket channels
         await self.ws.subscribe_all([self.current_market])
 
-        # Listen for updates
-        logger.info("Listening for trading opportunities...")
-        await self.ws.listen()
+        # Run both WebSocket listener AND REST polling in parallel
+        logger.info("Starting WebSocket listener + REST polling (1s interval)...")
+        await asyncio.gather(
+            self.ws.listen(),
+            self._rest_polling_loop(),
+        )
+
+    async def _rest_polling_loop(self):
+        """Poll REST API every second for orderbook data (fallback for empty WebSocket)"""
+        logger.info("REST polling loop started")
+        poll_count = 0
+
+        while True:
+            try:
+                # Reload settings
+                self._reload_settings()
+
+                # Check if market is still valid (hasn't expired)
+                await self._check_market_expiry()
+
+                # Get orderbook via REST
+                try:
+                    orderbook = await self.rest.get_orderbook(self.current_market, depth=20)
+                    yes_levels = [[lvl.price, lvl.quantity] for lvl in orderbook.yes]
+                    no_levels = [[lvl.price, lvl.quantity] for lvl in orderbook.no]
+
+                    # Log every 10 polls
+                    poll_count += 1
+                    if poll_count % 10 == 0:
+                        top_yes = yes_levels[0] if yes_levels else [0, 0]
+                        top_no = no_levels[0] if no_levels else [0, 0]
+                        logger.info(
+                            f"[POLL #{poll_count}] {self.current_market}: "
+                            f"YES {top_yes[0]}c ({top_yes[1]:,}), NO {top_no[0]}c ({top_no[1]:,})"
+                        )
+
+                    # Save for dashboard
+                    save_orderbook_snapshot(self.current_market, yes_levels, no_levels)
+                    self._save_state_for_dashboard(yes_levels, no_levels)
+
+                    # Store in WebSocket's orderbook dict so strategy can use it
+                    self.ws.orderbooks[self.current_market] = {
+                        "yes": yes_levels,
+                        "no": no_levels,
+                    }
+
+                    # Build ticker-like data from orderbook for strategy check
+                    if yes_levels and no_levels:
+                        ticker_data = {
+                            "market_ticker": self.current_market,
+                            "yes_bid": yes_levels[0][0] if yes_levels else 0,
+                            "no_bid": no_levels[0][0] if no_levels else 0,
+                            "yes_ask": 100 - no_levels[0][0] if no_levels else 0,
+                            "no_ask": 100 - yes_levels[0][0] if yes_levels else 0,
+                        }
+                        self.current_ticker_data[self.current_market] = ticker_data
+
+                        # Check for entry
+                        await self._check_entry(self.current_market, ticker_data)
+
+                except Exception as e:
+                    logger.warning(f"REST poll error: {e}")
+
+                await asyncio.sleep(1)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Polling loop error: {e}")
+                await asyncio.sleep(5)
+
+    async def _check_market_expiry(self):
+        """Check if current market has expired and switch to next one"""
+        try:
+            from datetime import datetime
+            import re
+
+            # Parse close time
+            if self.current_close_time:
+                close_time = datetime.fromisoformat(self.current_close_time.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+
+                # If market expired or will expire in 30s, get next market
+                if (close_time - now).total_seconds() < 30:
+                    logger.info("Market expiring, fetching next market...")
+                    markets = await self.rest.get_markets(
+                        series_ticker=SERIES_TICKER, status="open", limit=1
+                    )
+                    if markets and markets[0]["ticker"] != self.current_market:
+                        self.current_market = markets[0]["ticker"]
+                        self.current_close_time = markets[0].get("close_time", "")
+                        self.traded_windows = set()  # Reset for new market
+                        logger.info(f"Switched to new market: {self.current_market}")
+
+                        # Resubscribe WebSocket
+                        await self.ws.subscribe_all([self.current_market])
+
+        except Exception as e:
+            logger.warning(f"Market expiry check failed: {e}")
 
 
 async def main():
