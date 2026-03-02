@@ -15,10 +15,33 @@ import os
 import json
 import csv
 import io
+import threading
+import subprocess
+import sys
 from datetime import datetime, timezone
 from flask import Flask, render_template_string, jsonify, request, Response, session, redirect, url_for
 
 app = Flask(__name__)
+
+# Start trader in background thread when app starts
+def start_trader_background():
+    """Start the trader.py as a subprocess"""
+    subprocess.Popen(
+        [sys.executable, "trader.py"],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+# Start trader on first request (gunicorn worker)
+_trader_started = False
+
+@app.before_request
+def ensure_trader_running():
+    global _trader_started
+    if not _trader_started:
+        _trader_started = True
+        thread = threading.Thread(target=start_trader_background, daemon=True)
+        thread.start()
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 
 # Global state (shared with trader process)
